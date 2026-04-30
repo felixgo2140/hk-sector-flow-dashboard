@@ -1,0 +1,41 @@
+name: refresh-data
+
+# 每个交易日（周一至周五）港股收盘后跑一次 ingest，更新 web/db/data.db。
+# 港股 16:10 收盘 (UTC+8) ≈ 08:10 UTC；安排 09:00 UTC 触发以等待数据上传。
+on:
+  schedule:
+    - cron: "0 9 * * 1-5"
+  workflow_dispatch:        # 允许手动触发
+
+permissions:
+  contents: write           # 需要 write 权限来 commit data.db
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Python deps
+        run: pip install -r ingest/requirements.txt
+
+      - name: Pull data
+        run: make pull
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/db/data.db
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "chore(data): refresh $(date -u +%Y-%m-%d)"
+            git push
+          fi
